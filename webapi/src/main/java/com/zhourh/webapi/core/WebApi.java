@@ -218,6 +218,11 @@ public class WebApi {
         }
 
         @Override
+        public void onError(Throwable e) {
+            apiSubscriber.onError(e);
+        }
+
+        @Override
         public void onComplete() {
             super.onComplete();
             subscribers.remove(requestId);
