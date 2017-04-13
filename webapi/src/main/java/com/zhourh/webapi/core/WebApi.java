@@ -1,5 +1,14 @@
 package com.zhourh.webapi.core;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.security.KeyManagementException;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.security.cert.CertificateException;
+import java.security.cert.CertificateFactory;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -7,6 +16,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -17,6 +27,7 @@ import retrofit2.Retrofit;
 import retrofit2.converter.fastjson.FastJsonConverterFactory;
 
 import android.app.Application;
+import android.content.Context;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 
@@ -26,6 +37,12 @@ import com.franmontiel.persistentcookiejar.persistence.SharedPrefsCookiePersisto
 import com.jakewharton.retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory;
 import com.zhourh.webapi.exception.ApiException;
 import com.zhourh.webapi.response.ApiResult;
+
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSession;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
 
 import io.reactivex.Flowable;
 import io.reactivex.android.schedulers.AndroidSchedulers;
@@ -245,6 +262,8 @@ public class WebApi {
 
         private Map<Integer, Class> serviceClasses = new HashMap<>();
 
+        private Map<String, String> sslCertificates = new HashMap<>();
+
         private ApiSubscriber.ApiErrorCallback apiErrorCallback;
 
         private List<Interceptor> interceptors = new ArrayList<>();
@@ -276,6 +295,12 @@ public class WebApi {
         }
 
         @NonNull
+        public Builder addSslCertificate(@NonNull String hostname, @NonNull String certificateAssetPath){
+            sslCertificates.put(hostname, certificateAssetPath);
+            return this;
+        }
+
+        @NonNull
         public Builder addInterceptor(@NonNull Interceptor interceptor){
             interceptors.add(interceptor);
             return this;
@@ -302,6 +327,13 @@ public class WebApi {
                     okHttpClientBuilder.addInterceptor(iterator.next());
                 }
             }
+            if (!sslCertificates.isEmpty()){
+                Set<Map.Entry<String, String>> certificates = sslCertificates.entrySet();
+                if (certificates != null && !certificates.isEmpty()){
+                    sslEncrypt(application.getApplicationContext(), okHttpClientBuilder, certificates);
+                }
+            }
+
             HttpLoggingInterceptor loggingInterceptor = new HttpLoggingInterceptor();
             loggingInterceptor.setLevel(logLevel);
             okHttpClientBuilder.addInterceptor(loggingInterceptor);
@@ -311,6 +343,49 @@ public class WebApi {
                     .client(okHttpClientBuilder.build())
                     .build();
             return new WebApi(application, retrofit, serviceClasses, apiErrorCallback);
+        }
+
+        private void sslEncrypt(Context context, OkHttpClient.Builder okHttpClientBuilder, Set<Map.Entry<String, String>> certificates){
+            try {
+                CertificateFactory certificateFactory = CertificateFactory.getInstance("X.509");
+                KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
+                keyStore.load(null);
+                Iterator<Map.Entry<String, String>> iterator = certificates.iterator();
+                final List<String> hostnames = new ArrayList<>();
+                while (iterator.hasNext()){
+                    Map.Entry<String, String>  certificate = iterator.next();
+                    hostnames.add(certificate.getKey());
+                    InputStream certificateIs = context.getAssets().open(certificate.getValue());
+                    if (certificateIs == null){
+                        continue;
+                    }
+                    keyStore.setCertificateEntry(certificate.getKey(), certificateFactory.generateCertificate(certificateIs));
+                }
+                SSLContext sslContext = SSLContext.getInstance("TLS");
+                TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+                trustManagerFactory.init(keyStore);
+                sslContext.init(null, trustManagerFactory.getTrustManagers(), new SecureRandom());
+                okHttpClientBuilder.sslSocketFactory(sslContext.getSocketFactory());
+                okHttpClientBuilder.hostnameVerifier(new HostnameVerifier() {
+                    @Override
+                    public boolean verify(String hostname, SSLSession session) {
+                        return hostnames.contains(hostname);
+                    }
+                });
+
+            } catch (CertificateException e) {
+                e.printStackTrace();
+            } catch (KeyStoreException e) {
+                e.printStackTrace();
+            } catch (NoSuchAlgorithmException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
+            } catch (KeyManagementException e) {
+                e.printStackTrace();
+            } catch (Exception e){
+                e.printStackTrace();
+            }
         }
     }
 

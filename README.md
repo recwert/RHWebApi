@@ -35,10 +35,17 @@ allprojects {
 在你的app的build.gradle文件的`dependencies`节点添加`RHWebApi`
 
 ```groovy
-compile 'com.github.recwert:RHWebApi:0.1.3'
+compile 'com.github.recwert:RHWebApi:0.1.5'
 
 ```
 
+由于RHWebApi同时应用了RxJava 和 RxJava 2，所以需要在app的build.gradle文件的`android节点`添加如下代码
+```groovy
+packagingOptions {
+        exclude 'META-INF/rxjava.properties'
+    }
+
+```
 ## 使用
 
 ```java
