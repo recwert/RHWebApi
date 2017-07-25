@@ -13,6 +13,9 @@ Retrofit已经十分方便开发者进行Http Restful格式的访问了，但是
 - 可开关式Cookie存储
 - 可取消请求
 - 可配置https证书
+- 支持回调数据或全部数据
+
+>>>>>>> Stashed changes
 
 ## 系统要求
 
@@ -35,7 +38,7 @@ allprojects {
 在你的app的build.gradle文件的`dependencies`节点添加`RHWebApi`
 
 ```groovy
-compile 'com.github.recwert:RHWebApi:0.1.5'
+compile 'com.github.recwert:RHWebApi:0.1.6'
 
 ```
 

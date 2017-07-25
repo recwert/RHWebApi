@@ -15,7 +15,6 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -41,7 +40,6 @@ import com.zhourh.webapi.response.ApiResult;
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSession;
-import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
 
 import io.reactivex.Flowable;
@@ -164,6 +162,29 @@ public class WebApi {
     }
 
     /**
+     * Send a http request, but should get all the response data
+     * @param flowable the service return value, such as {@code Flowable<ApiResult<String>> login(String account, String password)}
+     * @param subscriber @{@linkplain ApiSubscriber}
+     * @param <T>
+     * @return requestId, you can cancel a request through requestId, @{@linkplain WebApi#cancelRequest(int)}
+     */
+    public <T> int requestWithAllData(@NonNull Flowable<? extends ApiResult<T>> flowable, @NonNull ApiSubscriber<ApiResult<T>> subscriber) {
+        checkNotNull(flowable, "flowable == null");
+        checkNotNull(subscriber, "subscriber == null");
+        subscriber.setApiErrorCallback(apiErrorCallback);
+        int requestId = requestCounter.addAndGet(1);
+        ApiSubscriberDecorator subscriberDecorator = new ApiSubscriberDecorator(requestId, subscriber);
+        flowable.subscribeOn(Schedulers.io())
+                .unsubscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .map(new HttpResultWithAllDataFunction<T>())
+                .subscribe(subscriberDecorator);
+        subscribers.put(requestId, subscriberDecorator);
+        return requestId;
+    }
+
+
+    /**
      * Cancel a request through requestId
      * @param requestId @{@linkplain WebApi#request(Flowable, ApiSubscriber)}
      */
@@ -197,7 +218,7 @@ public class WebApi {
      * Check the http response is correct
      * @param <T> the type of response model actually
      */
-    private class HttpResultFunction<T> implements Function<ApiResult<T>, T>{
+    private class HttpResultFunction<T> implements Function<ApiResult<T>, T> {
 
         @Override
         public T apply(ApiResult<T> tApiResult) throws Exception {
@@ -205,11 +226,30 @@ public class WebApi {
                 throw new ApiException(tApiResult.getError());
             }
             if (tApiResult.getData() == null){
+                //这个方法目前还有待验证
+//                if (tApiResult.getClass().getGenericSuperclass() instanceof ParameterizedType){
+//                    ParameterizedType parameterizedType = (ParameterizedType) tApiResult.getClass().getGenericSuperclass();
+//                    if (parameterizedType.getActualTypeArguments().length > 0){
+//                        Class<?> tClass = parameterizedType.getActualTypeArguments()[0].getClass();
+//                        return (T) tClass.newInstance();
+//                    }
+//                }
                 return (T) "";
             }
             return tApiResult.getData();
         }
 
+    }
+
+    private class HttpResultWithAllDataFunction<T> implements Function<ApiResult<T>, ApiResult<T>> {
+
+        @Override
+        public ApiResult<T> apply(ApiResult<T> rApiResult) throws Exception {
+            if (!rApiResult.isSuccess()){
+                throw new ApiException(rApiResult.getError());
+            }
+            return rApiResult;
+        }
     }
 
 
