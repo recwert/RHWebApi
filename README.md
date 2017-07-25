@@ -15,8 +15,6 @@ Retrofit已经十分方便开发者进行Http Restful格式的访问了，但是
 - 可配置https证书
 - 支持回调数据或全部数据
 
->>>>>>> Stashed changes
-
 ## 系统要求
 
 RHWebApi 支持Android 2.3(Gingerbread)或以上
