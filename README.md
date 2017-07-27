@@ -36,7 +36,7 @@ allprojects {
 在你的app的build.gradle文件的`dependencies`节点添加`RHWebApi`
 
 ```groovy
-compile 'com.github.recwert:RHWebApi:0.1.6'
+compile 'com.github.recwert:RHWebApi:0.1.7'
 
 ```
 

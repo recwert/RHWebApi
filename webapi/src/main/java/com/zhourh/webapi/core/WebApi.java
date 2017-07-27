@@ -168,7 +168,7 @@ public class WebApi {
      * @param <T>
      * @return requestId, you can cancel a request through requestId, @{@linkplain WebApi#cancelRequest(int)}
      */
-    public <T> int requestWithAllData(@NonNull Flowable<? extends ApiResult<T>> flowable, @NonNull ApiSubscriber<ApiResult<T>> subscriber) {
+    public <T, R extends ApiResult<T>> int requestWithAllData(@NonNull Flowable<R> flowable, @NonNull ApiSubscriber<R> subscriber) {
         checkNotNull(flowable, "flowable == null");
         checkNotNull(subscriber, "subscriber == null");
         subscriber.setApiErrorCallback(apiErrorCallback);
@@ -177,7 +177,7 @@ public class WebApi {
         flowable.subscribeOn(Schedulers.io())
                 .unsubscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
-                .map(new HttpResultWithAllDataFunction<T>())
+                .map(new HttpResultWithAllDataFunction<T, R>())
                 .subscribe(subscriberDecorator);
         subscribers.put(requestId, subscriberDecorator);
         return requestId;
@@ -222,7 +222,7 @@ public class WebApi {
 
         @Override
         public T apply(ApiResult<T> tApiResult) throws Exception {
-            if (!tApiResult.isSuccess()){
+            if (!tApiResult.isSuccess()) {
                 throw new ApiException(tApiResult.getError());
             }
             if (tApiResult.getData() == null){
@@ -241,11 +241,12 @@ public class WebApi {
 
     }
 
-    private class HttpResultWithAllDataFunction<T> implements Function<ApiResult<T>, ApiResult<T>> {
+    private class HttpResultWithAllDataFunction<T, R extends ApiResult<T>> implements Function<R, R> {
+
 
         @Override
-        public ApiResult<T> apply(ApiResult<T> rApiResult) throws Exception {
-            if (!rApiResult.isSuccess()){
+        public R apply(R rApiResult) throws Exception {
+            if (!rApiResult.isSuccess()) {
                 throw new ApiException(rApiResult.getError());
             }
             return rApiResult;
