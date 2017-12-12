@@ -473,20 +473,11 @@ public class WebApi {
                 Request request = chain.request();
                 Response response = chain.proceed(request);
 
-                String cacheControl = null;
+                String cacheControl = request.cacheControl().toString();
 
-                // 首先检查客户端是否配置了Cache-Control
-                if (!TextUtils.isEmpty(request.header("Cache-Control"))) {
-                    cacheControl = request.cacheControl().toString();
-                }
-                // 继续检查服务端是否配置了Cache-Control
-                else if (!TextUtils.isEmpty(response.header("Cache-Control"))) {
+                // 检查服务端是否配置了Cache-Control
+                if (!TextUtils.isEmpty(response.header("Cache-Control"))) {
                     cacheControl = response.cacheControl().toString();
-                }
-
-                // 客户端和服务端均不使用Cache
-                if (TextUtils.isEmpty(cacheControl)) {
-                    return response;
                 }
 
                 return response.newBuilder().removeHeader("Pragma")
