@@ -1,5 +1,20 @@
 package com.zhourh.webapi.core;
 
+import android.app.Application;
+import android.content.Context;
+import android.os.Environment;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
+import android.text.TextUtils;
+
+import com.franmontiel.persistentcookiejar.PersistentCookieJar;
+import com.franmontiel.persistentcookiejar.cache.SetCookieCache;
+import com.franmontiel.persistentcookiejar.persistence.SharedPrefsCookiePersistor;
+import com.jakewharton.retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory;
+import com.zhourh.webapi.exception.ApiException;
+import com.zhourh.webapi.response.ApiResult;
+
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.KeyManagementException;
@@ -19,24 +34,6 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import okhttp3.Interceptor;
-import okhttp3.OkHttpClient;
-import okhttp3.logging.HttpLoggingInterceptor;
-import retrofit2.Retrofit;
-import retrofit2.converter.fastjson.FastJsonConverterFactory;
-
-import android.app.Application;
-import android.content.Context;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-
-import com.franmontiel.persistentcookiejar.PersistentCookieJar;
-import com.franmontiel.persistentcookiejar.cache.SetCookieCache;
-import com.franmontiel.persistentcookiejar.persistence.SharedPrefsCookiePersistor;
-import com.jakewharton.retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory;
-import com.zhourh.webapi.exception.ApiException;
-import com.zhourh.webapi.response.ApiResult;
-
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSession;
@@ -46,6 +43,14 @@ import io.reactivex.Flowable;
 import io.reactivex.android.schedulers.AndroidSchedulers;
 import io.reactivex.functions.Function;
 import io.reactivex.schedulers.Schedulers;
+import okhttp3.Cache;
+import okhttp3.Interceptor;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.logging.HttpLoggingInterceptor;
+import retrofit2.Retrofit;
+import retrofit2.converter.fastjson.FastJsonConverterFactory;
 
 import static com.zhourh.webapi.utils.Utils.checkNotNull;
 
@@ -299,6 +304,13 @@ public class WebApi {
 
         private boolean persistentCookie;
 
+        private boolean cache;
+
+        private String cacheDiretory = Environment.getExternalStorageDirectory().getAbsolutePath()
+                + File.separator + "HttpCache";
+
+        private int cacheSize = 10 * 1024 * 1024;
+
         private HttpLoggingInterceptor.Level logLevel;
 
         private Map<Integer, Class> serviceClasses = new HashMap<>();
@@ -319,6 +331,21 @@ public class WebApi {
         @NonNull
         public Builder persistentCookie(boolean persistentCookie){
             this.persistentCookie = persistentCookie;
+            return this;
+        }
+
+        public Builder cache(boolean cache) {
+            this.cache = cache;
+            return this;
+        }
+
+        public Builder cacheDiretory(String cacheDiretory) {
+            this.cacheDiretory = cacheDiretory;
+            return this;
+        }
+
+        public Builder cacheSize(int cacheSize) {
+            this.cacheSize = cacheSize;
             return this;
         }
 
@@ -359,9 +386,11 @@ public class WebApi {
             checkNotNull(logLevel, "logLevel == null");
             checkNotNull(application, "application == null");
             OkHttpClient.Builder okHttpClientBuilder = new OkHttpClient.Builder();
+
             if (persistentCookie){
                 okHttpClientBuilder.cookieJar(new PersistentCookieJar(new SetCookieCache(), new SharedPrefsCookiePersistor(application)));
             }
+
             if (!interceptors.isEmpty()){
                 Iterator<Interceptor> iterator = interceptors.iterator();
                 while (iterator.hasNext()){
@@ -378,6 +407,13 @@ public class WebApi {
             HttpLoggingInterceptor loggingInterceptor = new HttpLoggingInterceptor();
             loggingInterceptor.setLevel(logLevel);
             okHttpClientBuilder.addInterceptor(loggingInterceptor);
+
+            if (cache && !TextUtils.isEmpty(cacheDiretory) && cacheSize > 0) {
+                Cache cache = new Cache(new File(cacheDiretory), cacheSize);
+                okHttpClientBuilder.cache(cache);
+                okHttpClientBuilder.addNetworkInterceptor(new CacheInterceptor());
+            }
+
             Retrofit retrofit = new Retrofit.Builder().baseUrl(baseUrl)
                     .addCallAdapterFactory(RxJava2CallAdapterFactory.create())
                     .addConverterFactory(FastJsonConverterFactory.create())
@@ -426,6 +462,35 @@ public class WebApi {
                 e.printStackTrace();
             } catch (Exception e){
                 e.printStackTrace();
+            }
+        }
+
+        private class CacheInterceptor implements Interceptor {
+
+            @Override
+            public Response intercept(Chain chain) throws IOException {
+
+                Request request = chain.request();
+                Response response = chain.proceed(request);
+
+                String cacheControl = null;
+
+                // 首先检查客户端是否配置了Cache-Control
+                if (!TextUtils.isEmpty(request.header("Cache-Control"))) {
+                    cacheControl = request.cacheControl().toString();
+                }
+                // 继续检查服务端是否配置了Cache-Control
+                else if (!TextUtils.isEmpty(response.header("Cache-Control"))) {
+                    cacheControl = response.cacheControl().toString();
+                }
+
+                // 客户端和服务端均不使用Cache
+                if (TextUtils.isEmpty(cacheControl)) {
+                    return response;
+                }
+
+                return response.newBuilder().removeHeader("Pragma")
+                        .header("Cache-Control", cacheControl).build();
             }
         }
     }
