@@ -11,6 +11,7 @@ import com.franmontiel.persistentcookiejar.PersistentCookieJar;
 import com.franmontiel.persistentcookiejar.cache.SetCookieCache;
 import com.franmontiel.persistentcookiejar.persistence.SharedPrefsCookiePersistor;
 import com.jakewharton.retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory;
+import com.zhourh.webapi.cert.AllX509TrustManager;
 import com.zhourh.webapi.exception.ApiException;
 import com.zhourh.webapi.response.ApiResult;
 
@@ -37,6 +38,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSession;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
 
 import io.reactivex.Flowable;
@@ -317,6 +320,8 @@ public class WebApi {
 
         private Map<String, String> sslCertificates = new HashMap<>();
 
+        private List<String> trustDomains = new ArrayList<>();
+
         private ApiSubscriber.ApiErrorCallback apiErrorCallback;
 
         private List<Interceptor> interceptors = new ArrayList<>();
@@ -368,6 +373,11 @@ public class WebApi {
             return this;
         }
 
+        public Builder addTrustDomain(@NonNull String hostname) {
+            trustDomains.add(hostname);
+            return this;
+        }
+
         @NonNull
         public Builder addInterceptor(@NonNull Interceptor interceptor){
             interceptors.add(interceptor);
@@ -397,7 +407,10 @@ public class WebApi {
                     okHttpClientBuilder.addInterceptor(iterator.next());
                 }
             }
-            if (!sslCertificates.isEmpty()){
+
+            if (!trustDomains.isEmpty()) {
+                trustDomains(okHttpClientBuilder, trustDomains);
+            } else if (!sslCertificates.isEmpty()){
                 Set<Map.Entry<String, String>> certificates = sslCertificates.entrySet();
                 if (certificates != null && !certificates.isEmpty()){
                     sslEncrypt(application.getApplicationContext(), okHttpClientBuilder, certificates);
@@ -461,6 +474,23 @@ public class WebApi {
             } catch (KeyManagementException e) {
                 e.printStackTrace();
             } catch (Exception e){
+                e.printStackTrace();
+            }
+        }
+
+        private void trustDomains(OkHttpClient.Builder okHttpClientBuilder, final List<String> domains) {
+            try {
+                SSLContext sslContext = SSLContext.getInstance("TLS");
+                sslContext.init(null, new TrustManager[]{new AllX509TrustManager()}, new SecureRandom());
+                SSLSocketFactory sslSocketFactory = sslContext.getSocketFactory();
+                okHttpClientBuilder.sslSocketFactory(sslSocketFactory);
+                okHttpClientBuilder.hostnameVerifier(new HostnameVerifier() {
+                    @Override
+                    public boolean verify(String hostname, SSLSession session) {
+                        return domains.contains(hostname);
+                    }
+                });
+            } catch (Exception e) {
                 e.printStackTrace();
             }
         }
